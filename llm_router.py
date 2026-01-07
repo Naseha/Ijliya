@@ -4,13 +4,11 @@ import asyncio
 from typing import Optional, Tuple
 import traceback
 import json
-from google import genai
 import asyncio
 from openrouter import OpenRouter
 # Import SDKs (install with: pip install groq google-generativeai openrouter-py huggingface_hub requests)
 from groq import Groq
-#import google.generativeai as genai
-from google import genai
+import google.generativeai as genai
 #import openrouter_py
 from openrouter import OpenRouter
 from huggingface_hub import InferenceClient
@@ -171,62 +169,23 @@ async def try_huggingface(question: str) -> Optional[str]:
         
 
 #Gemini 
-
 async def try_gemini(question: str) -> Optional[str]:
-    if not GEMINI_API_KEY and not GEMINI_API_KEY_2:
-        if DEBUG: print("❌ Gemini skipped: no GEMINI_API_KEY set")
-        return None
-
     keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
-    for i, key in enumerate(keys):
+    for key in keys:
         if not key:
             continue
-
-        def call_sync():
-            # create client per key (sync)
-            client = genai.Client(api_key=key)
-            # SDK shapes vary; pass a minimal request body
-            return client.models.generate_content(
-                model="gemini-1.5-flash",
-                # many SDKs accept a list of contents or a single string; adapt if needed
-                contents=[PROMPT_TEMPLATE.format(question=question)],
-                max_output_tokens=20,
-                temperature=0.0
-            )
-
         try:
-            resp = await asyncio.to_thread(call_sync)
-
-            # debug raw
-            try:
-                raw = resp.model_dump() if hasattr(resp, "model_dump") else (resp.dict() if hasattr(resp, "dict") else resp)
-                raw_json = json.dumps(raw, default=lambda o: str(o))[:1000]
-            except Exception:
-                raw_json = str(resp)[:1000]
-            if DEBUG: print(f"🔎 Gemini raw response (truncated): {raw_json}")
-
-            # extract text (common shapes)
-            text = None
-            if hasattr(resp, "candidates") and getattr(resp, "candidates"):
-                cand = resp.candidates[0]
-                text = getattr(cand, "content", None) or getattr(cand, "text", None)
-            elif hasattr(resp, "text"):
-                text = resp.text
-            elif isinstance(resp, dict):
-                # try common dict shapes
-                text = resp.get("text") or (resp.get("candidates") or [{}])[0].get("content") or (resp.get("candidates") or [{}])[0].get("text")
-
-            if text:
-                return clean_output(text)
-
-            if DEBUG:
-                print(f"❌ Gemini (key {i+1}) returned no text; raw (truncated): {raw_json}")
+            genai.configure(api_key=key)  # ✅ correct usage
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = await asyncio.to_thread(
+                model.generate_content,
+                PROMPT_TEMPLATE.format(question=question),
+                generation_config={"max_output_tokens": 20, "temperature": 0.0}
+            )
+            return clean_output(response.text)
         except Exception as e:
-            if DEBUG:
-                print(f"❌ Gemini (key {i+1}) exception:")
-                traceback.print_exc()
+            print(f"❌ Gemini failed: {str(e)[:60]}")
             continue
-
     return None
     
 #Open Router
