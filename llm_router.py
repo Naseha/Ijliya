@@ -19,17 +19,21 @@ HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 SAMBANOVA_API_KEY = os.getenv("SAMBANOVA_API_KEY")
 CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
 
-# Prompt template: extract only topic
-PROMPT_TEMPLATE = (
-    You are an information retrieval assistant. Your task is to gather factual, verbatim excerpts from Wikipedia and its sister sites (Wikivoyage, Wikibooks, Wikinews, Wikidata, Wikimedia Commons) related to the user's query. Do not create summaries or add any interpretations; only replicate 2-3 lines directly from the relevant Wikipedia sections or sister sites that contain essential details about the topic.
-    You must **only** search and extract information from these specified sites. Do not search or include content from any other sources or websites.
-    If the query refers to multiple topics (e.g., "Pluto" as a planet, Disney character, or mythological figure), provide 2-3 lines about each relevant aspect, clearly indicating each. After presenting the information, ask the user which specific aspect or topic they are interested in to refine the response.
-    Question: {question}
-    Your response should include:
-    - Exact 2-3 lines from Wikipedia or sister sites for each relevant topic.
-    - No summaries or creative writing.
-    - Clear indication of different topics if multiple are addressed.
-    - A polite question asking the user to specify their preferred aspect or topic for more focused information.)
+# Prompt template: 
+prompt = """You are an information retrieval assistant. Your task is to gather factual, verbatim excerpts from Wikipedia and its sister sites (Wikivoyage, Wikibooks, Wikinews, Wikidata, Wikimedia Commons) related to the user's query. Do not create summaries or add any interpretations; only replicate 2-3 lines directly from the relevant Wikipedia sections or sister sites that contain essential details about the topic.
+
+You must only search and extract information from these specified sites. Do not search or include content from any other sources or websites.
+
+If the query refers to multiple topics (e.g., "Pluto" as a planet, Disney character, or mythological figure), provide 2-3 lines about each relevant aspect, clearly indicating each. After presenting the information, ask the user which specific aspect or topic they are interested in to refine the response.
+
+Question: {question}
+Your response should include:
+- Exact 2-3 lines from Wikipedia or sister sites for each relevant topic.
+- No summaries or creative writing.
+- Clear indication of different topics if multiple are addressed.
+- A polite question asking the user to specify their preferred aspect or topic for more focused information.
+"""
+
 
 # Helper: clean output
 def clean_output(text: str) -> str:
