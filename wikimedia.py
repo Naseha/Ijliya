@@ -1,14 +1,15 @@
 # wikimedia.py
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import time
+import urllib.parse
 
 # 🌐 Set a valid User-Agent + longer timeout
 HEADERS = {
     "User-Agent": "Ijliya/1.0 (https://github.com/yourusername/ijliya; naseha@example.com) Python/requests"
 }
-TIMEOUT = 30  # increased from 5
-MAX_RETRIES = 3  # retry once on timeout
+TIMEOUT = 30
+MAX_RETRIES = 3
 
 
 def _get_with_retry(url: str, params: dict) -> Optional[dict]:
@@ -26,12 +27,10 @@ def _get_with_retry(url: str, params: dict) -> Optional[dict]:
                 print(f"  ❌ Failed after {MAX_RETRIES + 1} attempts")
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response is not None else None
-            # Retry on transient server errors or rate limiting
             if status in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:
                 print(f"  ⚠️  HTTP {status} (attempt {attempt + 1}/{MAX_RETRIES + 1}), retrying...")
                 time.sleep(1)
                 continue
-            # For client errors like 400/404, no point retrying
             print(f"  ❌ HTTP error {status}: {e}")
             return None
         except Exception as e:
@@ -39,6 +38,111 @@ def _get_with_retry(url: str, params: dict) -> Optional[dict]:
             return None
     return None
 
+
+# ✅ NEW: Get disambiguation options from Wikipedia (opensearch)
+def get_wikipedia_disambiguation_options(topic: str, limit: int = 5) -> List[Dict[str, str]]:
+    """
+    Returns list of candidate pages for `topic` using Wikipedia's opensearch.
+    Each item: {"title": ..., "description": ..., "url": ...}
+    """
+    params = {
+        "action": "opensearch",
+        "search": topic,
+        "limit": limit,
+        "format": "json",
+        "namespace": 0
+    }
+    data = _get_with_retry("https://en.wikipedia.org/w/api.php", params)
+    if not data or len(data) < 4:
+        return []
+
+    titles = data[1]
+    descs = data[2]
+    urls = data[3]
+
+    results = []
+    for title, desc, url in zip(titles, descs, urls):
+        results.append({
+            "title": title,
+            "description": (desc[:197] + "...") if len(desc) > 200 else desc or "No description available.",
+            "url": url
+        })
+    return results
+
+
+# ✅ NEW: Get full Ijliya response by Wikipedia title (bypass topic search)
+def get_ijliya_response_by_title(title: str) -> Optional[Dict[str, Any]]:
+    """
+    Given a Wikipedia page title, fetch its Wikidata QID and full extract.
+    """
+    # Step 1: Get Wikidata QID from Wikipedia page
+    params = {
+        "action": "query",
+        "titles": title,
+        "prop": "pageprops",
+        "format": "json"
+    }
+    wp_data = _get_with_retry("https://en.wikipedia.org/w/api.php", params)
+    if not wp_data:
+        return None
+
+    pages = wp_data.get("query", {}).get("pages", {})
+    page_id = next(iter(pages)) if pages else None
+    if not page_id or page_id == "-1":
+        return None
+
+    page = pages[page_id]
+    wikibase_item = page.get("pageprops", {}).get("wikibase_item")
+    if not wikibase_item:
+        # Fallback: try to get extract directly without Wikidata
+        return _fallback_extract_by_title(title)
+
+    # Step 2: Now use Wikidata QID to get full extract (your original flow)
+    return get_wikipedia_page(wikibase_item)
+
+
+def _fallback_extract_by_title(title: str) -> Dict[str, Any]:
+    """Fallback when no Wikidata item exists."""
+    params = {
+        "action": "query",
+        "titles": title,
+        "prop": "extracts",
+        "exintro": "1",
+        "explaintext": "1",
+        "format": "json"
+    }
+    wp_data = _get_with_retry("https://en.wikipedia.org/w/api.php", params)
+    if not wp_data:
+        return {
+            "title": title,
+            "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}",
+            "extract": None,
+            "source": "Wikipedia (CC BY-SA)"
+        }
+
+    pages = wp_data["query"]["pages"]
+    page_id = next(iter(pages))
+    if page_id == "-1":
+        return {
+            "title": title,
+            "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}",
+            "extract": None,
+            "source": "Wikipedia (CC BY-SA)"
+        }
+
+    page = pages[page_id]
+    extract = page.get("extract", "")
+    url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+
+    return {
+        "title": title,
+        "url": url,
+        "extract": extract,
+        "source": "Wikipedia (CC BY-SA)"
+    }
+
+
+# 🔁 Keep your original functions (unchanged in logic)
 def search_wikidata(topic: str) -> Optional[Dict[str, Any]]:
     params = {
         "action": "wbsearchentities",
@@ -61,7 +165,6 @@ def search_wikidata(topic: str) -> Optional[Dict[str, Any]]:
 
 
 def get_wikipedia_page(qid: str) -> Optional[Dict[str, Any]]:
-    # Step 1: Get sitelinks from Wikidata
     params_wd = {
         "action": "wbgetentities",
         "ids": qid,
@@ -85,8 +188,6 @@ def get_wikipedia_page(qid: str) -> Optional[Dict[str, Any]]:
         return None
 
     title = enwiki["title"]
-    
-    # Step 2: Get extract from Wikipedia
     params_wp = {
         "action": "query",
         "titles": title,
@@ -96,9 +197,7 @@ def get_wikipedia_page(qid: str) -> Optional[Dict[str, Any]]:
         "format": "json"
     }
     print(f"📄 Fetching extract for: {title}")
-    #wp_data = _get_with_retry("https://en.wikipedia.org/api.php", params_wp)
     wp_data = _get_with_retry("https://en.wikipedia.org/w/api.php", params_wp)
-    
     if not wp_data:
         return None
 
@@ -109,7 +208,7 @@ def get_wikipedia_page(qid: str) -> Optional[Dict[str, Any]]:
 
     page = pages[page_id]
     extract = page.get("extract", "")
-    url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
+    url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
 
     return {
         "title": title,
@@ -120,6 +219,7 @@ def get_wikipedia_page(qid: str) -> Optional[Dict[str, Any]]:
 
 
 def get_ijliya_response(topic: str) -> Optional[Dict[str, Any]]:
+    """Legacy: topic → Wikidata → Wikipedia (used when disambiguation not needed)"""
     wd_result = search_wikidata(topic)
     if not wd_result:
         return None
@@ -128,14 +228,13 @@ def get_ijliya_response(topic: str) -> Optional[Dict[str, Any]]:
 
 # 🔍 Test
 if __name__ == "__main__":
-    test_topic = "photosynthesis"
-    print(f"🧪 Testing Ijliya with topic: '{test_topic}'\n")
-    result = get_ijliya_response(test_topic)
-    if result:
-        print("\n🎉 FINAL RESULT:")
-        print(f"Title: {result['title']}")
-        print(f"URL: {result['url']}")
-        print(f"Source: {result['source']}")
-        print(f"Extract: {result['extract'][:120]}...")
+    test_topic = "Pluto"
+    print(f"🧪 Testing disambiguation for: '{test_topic}'\n")
+    options = get_wikipedia_disambiguation_options(test_topic, limit=5)
+    if options:
+        print("📋 Candidates:")
+        for i, opt in enumerate(options, 1):
+            print(f"{i}. {opt['title']}")
+            print(f"   {opt['description']}\n")
     else:
-        print("\n❌ No result after all retries.")
+        print("❌ No disambiguation options found.")
