@@ -3,7 +3,7 @@ import os
 import asyncio
 import requests
 from typing import Optional, List, Dict, Any
-#import wikipedia
+import wikipedia
 
 # Import SDKs
 from groq import Groq
