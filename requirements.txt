@@ -5,4 +5,4 @@ requests
 groq
 google-generativeai
 openrouter
-huggingface-hub
+huggingface_hub
