@@ -4,6 +4,7 @@ const IJLIYA_API_URL = "https://ijliya.onrender.com/ask";
 // Add message to chat
 function addMessage(text, sender) {
   const chat = document.getElementById("chat");
+  if (!chat) return; // safety check
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
   msg.innerHTML = text;
@@ -13,16 +14,19 @@ function addMessage(text, sender) {
 
 // Initialize chat with tribute
 document.addEventListener("DOMContentLoaded", () => {
-  addMessage(
-    "I’m Ijiliya — named for the quiet ones who built knowledge in silence.<br><br>Ask me anything. I’ll show you only what’s in Wikipedia and Wikimedia.",
-    "ijiliya"
-  );
+  const chat = document.getElementById("chat");
+  if (chat) {
+    addMessage(
+      "I’m Ijiliya — named for the quiet ones who built knowledge in silence.<br><br>Ask me anything. I’ll show you only what’s in Wikipedia and Wikimedia.",
+      "ijiliya"
+    );
+  }
 });
 
 // Handle user question
 async function askIjliya() {
   const input = document.getElementById("userQuery");
-  const query = input.value.trim();
+  const query = input?.value.trim(); // optional chaining
   const errorEl = document.getElementById("error");
 
   if (!query) return;
@@ -32,7 +36,7 @@ async function askIjliya() {
   input.value = "";
 
   // Clear error
-  errorEl.className = "error hidden";
+  if (errorEl) errorEl.className = "error hidden";
 
   try {
     const response = await fetch(IJLIYA_API_URL, {
@@ -67,7 +71,12 @@ async function askIjliya() {
 }
 
 // Button & Enter key
-document.getElementById("askBtn").addEventListener("click", askIjliya);
-document.getElementById("userQuery").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") askIjliya();
-});
+const askBtn = document.getElementById("askBtn");
+const userQuery = document.getElementById("userQuery");
+
+if (askBtn && userQuery) {
+  askBtn.addEventListener("click", askIjliya);
+  userQuery.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") askIjliya();
+  });
+}
