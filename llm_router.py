@@ -188,41 +188,63 @@ def get_wikipedia_disambiguation(topic: str, limit: int = 5) -> List[Dict[str, s
 
 # --- MAIN ROUTER: Topic extraction + Disambiguation ---
 async def route_query_to_wiki(question: str) -> Dict[str, Any]:
-    """
-    Full pipeline: extract topic → check ambiguity → return disambiguation or single result.
-    This function is meant to be called from main.py.
-    """
+    print(f"Received question: {question}")
     # Step 1: Extract clean topic using fallback LLMs
     topic = await extract_topic_fallback(question)
-    if not topic:
-        topic = question.strip()
+    print(f"Extracted topic: {topic}")
 
-    # Step 2: Query Wikimedia for candidate pages
+    # Query Wikimedia for candidate pages
     candidates = get_wikipedia_disambiguation(topic, limit=5)
+    print(f"Candidates retrieved: {candidates}")
 
-    # Step 3: Decide response format
+    # Show a few lines from each candidate if available
+    for idx, candidate in enumerate(candidates):
+        print(f"Candidate {idx+1}: {candidate['title']}")
+        print(f"Description: {candidate.get('description', '')}")
+        print(f"URL: {candidate.get('url', '')}")
+        print("-" * 40)
+
+    # Handle no candidates
     if not candidates:
         return {
             "error": True,
             "message": "No relevant Wikipedia pages found for your query."
         }
-    elif len(candidates) == 1:
-        # Single match → return as if it were a normal fetch (main.py will handle full extract later if needed)
-        return {
-            "disambiguation": False,
-            "topic": topic,
-            "title": candidates[0]["title"],
-            "url": candidates[0]["url"]
-        }
-    else:
-        # Multiple matches → return list for user to choose
-        return {
-            "disambiguation": True,
-            "topic": topic,
-            "options": candidates,
-            "source": "Wikipedia (CC BY-SA, via Wikimedia API)"
-        }
 
+    # Handle exactly one candidate
+    if len(candidates) == 1:
+        title = candidates[0]["title"]
+        full_result = get_ijliya_response_by_title(title)
+        print(f"Full result for title '{title}': {full_result}")
+        if full_result:
+            return SingleResult(
+                title=full_result["title"],
+                url=full_result["url"],
+                extract=full_result.get("extract"),
+                source=full_result["source"]
+            )
+        else:
+            return SingleResult(
+                title=title,
+                url=candidates[0]["url"],
+                extract=None,
+                source="Wikipedia (CC BY-SA)"
+            )
+
+    # Multiple candidates
+    else:
+        return DisambiguationResult(
+            topic=topic,
+            options=[
+                DisambiguationOption(
+                    title=opt["title"],
+                    description=opt["description"],
+                    url=opt["url"]
+                )
+                for opt in candidates
+            ],
+            source="Wikipedia (CC BY-SA)"
+        )
 # --- Legacy: Fallback topic extractor (used internally) ---
 async def extract_topic_fallback(question: str) -> str:
     providers = [
