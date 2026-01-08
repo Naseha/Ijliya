@@ -64,9 +64,16 @@ def get_wikipedia_disambiguation_options(topic: str, limit: int = 5) -> List[Dic
     for title, desc, url in zip(titles, descs, urls):
         results.append({
             "title": title,
-            "description": (desc[:197] + "...") if len(desc) > 200 else desc or "No description available.",
+            #"description": (desc[:197] + "...") if len(desc) > 200 else desc or "No description available.",
+            "description": desc if desc else "No description available.",
             "url": url
         })
+
+    for r in results:
+    print(f"✅ Title: {r['title']}")
+    print(f"📄 Description: {r['description']}")
+    print(f"🔗 URL: {r['url']}")
+    
     return results
 
 
