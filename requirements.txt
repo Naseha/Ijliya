@@ -1,8 +1,8 @@
-fastapi==0.115.0
-uvicorn==0.32.0
+fastapi
+uvicorn
 python-dotenv==1.0.1
-requests==2.32.3
-groq==0.15.0
-google-generativeai==0.8.3
+requests
+groq
+google-generativeai
 openrouter
-huggingface_hub==0.25.0
+huggingface-hub
