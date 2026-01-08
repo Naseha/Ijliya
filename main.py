@@ -3,75 +3,89 @@ import os
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Union
 
 # Import your modules
-from llm_router import extract_topic_fallback
-from wikimedia import get_ijliya_response
+from llm_router import route_query_to_wiki  # ← NEW: use the full router
+from wikimedia import get_full_wikipedia_extract  # ← rename/adjust as needed
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Ijliya API",
     description="A Wiki-only answer engine. No AI hallucinations — only Wikipedia links.",
-    version="1.0"
+    version="1.1"
 )
 
-# Allow requests from your frontend (GitHub Pages)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to your GitHub Pages URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Request model
 class QuestionRequest(BaseModel):
     question: str
 
-# Response model
-class IjliyaResponse(BaseModel):
-    wiki_links: List[str]
+# --- Response Models ---
+class SingleResult(BaseModel):
+    type: str = "single"
     title: str
+    url: str
     extract: Optional[str] = None
-    source: str
+    source: str = "Wikipedia (CC BY-SA)"
 
-@app.post("/ask", response_model=IjliyaResponse)
-async def ask_wikipedia(request: QuestionRequest):
-    """
-    Ask a question. Get only Wikipedia/Wikimedia content.
-    """
+class DisambiguationOption(BaseModel):
+    title: str
+    description: str
+    url: str
+
+class DisambiguationResult(BaseModel):
+    type: str = "disambiguation"
+    topic: str
+    options: List[DisambiguationOption]
+    source: str = "Wikipedia (CC BY-SA)"
+
+# Union response: either one page or many options
+IjliyaResponse = Union[SingleResult, DisambiguationResult]
+
+@app.post("/ask")
+async def ask_wikipedia(request: QuestionRequest) -> IjliyaResponse:
     user_question = request.question.strip()
-    
     if not user_question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
-    
-    # Step 1: Extract topic using redundant LLM router
-    topic = await extract_topic_fallback(user_question)
-    
-    # Step 2: Fetch from Wikimedia
-    wiki_result = get_ijliya_response(topic)
-    
-    if not wiki_result:
-        # Fallback: return search link
-        search_url = f"https://en.wikipedia.org/wiki/Special:Search?search={user_question.replace(' ', '%20')}"
-        return IjliyaResponse(
-            wiki_links=[search_url],
-            title="Search Wikipedia",
-            extract=None,
-            source="Wikipedia (CC BY-SA)"
-        )
-    
-    # Return clean, compliant response
-    return IjliyaResponse(
-        wiki_links=[wiki_result["url"]],
-        title=wiki_result["title"],
-        extract=wiki_result.get("extract"),
-        source=wiki_result["source"]
-    )
 
-# Health check
+    # ✅ NEW: Use the full pipeline (topic + disambiguation)
+    result = await route_query_to_wiki(user_question)
+
+    # Case 1: No candidates found
+    if result.get("error"):
+        raise HTTPException(status_code=404, detail=result["message"])
+
+    # Case 2: Disambiguation needed
+    if result.get("disambiguation"):
+        return DisambiguationResult(
+            topic=result["topic"],
+            options=[
+                DisambiguationOption(
+                    title=opt["title"],
+                    description=opt["description"],
+                    url=opt["url"]
+                )
+                for opt in result["options"]
+            ]
+        )
+
+    # Case 3: Single match → fetch full extract
+    else:
+        full_data = get_full_wikipedia_extract(result["title"])
+        return SingleResult(
+            title=full_data["title"],
+            url=full_data["url"],
+            extract=full_data.get("extract"),
+            source=full_data["source"]
+        )
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "Ijliya"}
