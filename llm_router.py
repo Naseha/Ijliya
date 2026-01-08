@@ -6,7 +6,8 @@ from typing import Optional
 # Import SDKs
 from groq import Groq
 import google.generativeai as genai
-from openrouter_py import OpenRouter
+#from openrouter_py import OpenRouter
+from openrouter import OpenRouter
 from huggingface_hub import InferenceClient
 import requests
 
