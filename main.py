@@ -3,12 +3,12 @@ import os
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional, Union
 
-# Import your modules
-from llm_router import route_query_to_wiki  # ← NEW: use the full router
-from wikimedia import get_full_wikipedia_extract  # ← rename/adjust as needed
+# Import your actual functions
+from llm_router import route_query_to_wiki
+from wikimedia import get_wikipedia_disambiguation_options, get_ijliya_response_by_title
 
 app = FastAPI(
     title="Ijliya API",
@@ -46,7 +46,7 @@ class DisambiguationResult(BaseModel):
     options: List[DisambiguationOption]
     source: str = "Wikipedia (CC BY-SA)"
 
-# Union response: either one page or many options
+# Union response type (FastAPI supports this in modern versions)
 IjliyaResponse = Union[SingleResult, DisambiguationResult]
 
 @app.post("/ask")
@@ -55,36 +55,60 @@ async def ask_wikipedia(request: QuestionRequest) -> IjliyaResponse:
     if not user_question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    # ✅ NEW: Use the full pipeline (topic + disambiguation)
-    result = await route_query_to_wiki(user_question)
+    # Step 1: Extract clean topic using LLMs
+    topic = await route_query_to_wiki(user_question)
+    if not topic or not isinstance(topic, str):
+        topic = user_question
 
-    # Case 1: No candidates found
-    if result.get("error"):
-        raise HTTPException(status_code=404, detail=result["message"])
+    # Step 2: Get disambiguation candidates from Wikipedia
+    candidates = get_wikipedia_disambiguation_options(topic, limit=5)
 
-    # Case 2: Disambiguation needed
-    if result.get("disambiguation"):
+    # Handle: no candidates
+    if not candidates:
+        search_url = f"https://en.wikipedia.org/wiki/Special:Search?search={user_question.replace(' ', '%20')}"
         return DisambiguationResult(
-            topic=result["topic"],
+            topic=topic,
+            options=[DisambiguationOption(
+                title="Search Wikipedia",
+                description="No exact matches found. Try searching manually.",
+                url=search_url
+            )],
+            source="Wikipedia (CC BY-SA)"
+        )
+
+    # Handle: multiple candidates → show disambiguation
+    if len(candidates) > 1:
+        return DisambiguationResult(
+            topic=topic,
             options=[
                 DisambiguationOption(
                     title=opt["title"],
                     description=opt["description"],
                     url=opt["url"]
                 )
-                for opt in result["options"]
+                for opt in candidates
             ]
         )
 
-    # Case 3: Single match → fetch full extract
+    # Handle: exactly one candidate → fetch full extract via Wikidata
     else:
-        full_data = get_full_wikipedia_extract(result["title"])
-        return SingleResult(
-            title=full_data["title"],
-            url=full_data["url"],
-            extract=full_data.get("extract"),
-            source=full_data["source"]
-        )
+        title = candidates[0]["title"]
+        full_result = get_ijliya_response_by_title(title)
+        if full_result:
+            return SingleResult(
+                title=full_result["title"],
+                url=full_result["url"],
+                extract=full_result.get("extract"),
+                source=full_result["source"]
+            )
+        else:
+            # Fallback if extract fails
+            return SingleResult(
+                title=title,
+                url=candidates[0]["url"],
+                extract=None,
+                source="Wikipedia (CC BY-SA)"
+            )
 
 @app.get("/health")
 async def health_check():
