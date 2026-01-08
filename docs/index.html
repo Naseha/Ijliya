@@ -3,37 +3,77 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Ijliya — Wiki-Only Answers</title>
-  <meta name="description" content="Ask anything. Get only Wikipedia and Wikimedia links. No AI hallucinations.">
-  <link rel="stylesheet" href="style.css" />
+  <title>Ijiliya</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f8f9fa;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    #chat {
+      height: 70vh;
+      overflow-y: auto;
+      padding: 20px;
+      margin-bottom: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 18px;
+      line-height: 1.4;
+    }
+    .user {
+      align-self: flex-end;
+      background: #e1f5fe;
+      border-bottom-right-radius: 4px;
+    }
+    .ijiliya {
+      align-self: flex-start;
+      background: #f1f1f1;
+      border-bottom-left-radius: 4px;
+    }
+    #input-area {
+      display: flex;
+      gap: 10px;
+    }
+    #userQuery {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid #ccc;
+      border-radius: 24px;
+      font-size: 16px;
+    }
+    #askBtn {
+      padding: 12px 24px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 24px;
+      cursor: pointer;
+    }
+    .error {
+      color: #d32f2f;
+      margin-top: 10px;
+    }
+    .hidden { display: none; }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>Ijliya</h1>
-      <p class="tagline">Ask anything. Get only <strong>Wikipedia</strong> and <strong>Wikimedia</strong> links.</p>
-      <p class="small">No AI answers. No hallucinations. Just verified knowledge.</p>
-    </header>
-
-    <main>
-      <div class="input-group">
-        <input type="text" id="userQuery" placeholder="e.g., What is photosynthesis?" aria-label="Ask a question" />
-        <button id="askBtn" onclick="askIjliya()">Ask</button>
-      </div>
-
-      <div id="status" class="status hidden">Searching Wikimedia...</div>
-      <div id="results" class="results"></div>
-      <div id="error" class="error hidden"></div>
-    </main>
-
-    <footer>
-      <p class="attribution">
-        Answers sourced from <a href="https://wikipedia.org" target="_blank">Wikipedia</a> and sister projects<br/>
-        © Content available under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank">CC BY-SA</a>
-      </p>
-      <p class="note">Ijliya does not generate, store, or modify any content. It only references official Wikimedia pages.</p>
-    </footer>
+  <div id="chat"></div>
+  <div id="input-area">
+    <input type="text" id="userQuery" placeholder="Ask anything…">
+    <button id="askBtn">Ask</button>
   </div>
+  <div id="error" class="error hidden"></div>
 
   <script src="script.js"></script>
 </body>
