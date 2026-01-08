@@ -1,19 +1,38 @@
 // Point to your LIVE Render backend
 const IJLIYA_API_URL = "https://ijliya.onrender.com/ask";
 
+// Add message to chat
+function addMessage(text, sender) {
+  const chat = document.getElementById("chat");
+  const msg = document.createElement("div");
+  msg.className = `message ${sender}`;
+  msg.innerHTML = text;
+  chat.appendChild(msg);
+  chat.scrollTop = chat.scrollHeight; // auto-scroll
+}
+
+// Initialize chat with tribute
+document.addEventListener("DOMContentLoaded", () => {
+  addMessage(
+    "I’m Ijiliya — named for the quiet ones who built knowledge in silence.<br><br>Ask me anything. I’ll show you only what’s in Wikipedia and Wikimedia.",
+    "ijiliya"
+  );
+});
+
+// Handle user question
 async function askIjliya() {
   const input = document.getElementById("userQuery");
   const query = input.value.trim();
-  const statusEl = document.getElementById("status");
-  const resultsEl = document.getElementById("results");
   const errorEl = document.getElementById("error");
 
   if (!query) return;
 
-  // Reset UI
-  resultsEl.innerHTML = "";
+  // Show user message
+  addMessage(query, "user");
+  input.value = "";
+
+  // Clear error
   errorEl.className = "error hidden";
-  statusEl.className = "status";
 
   try {
     const response = await fetch(IJLIYA_API_URL, {
@@ -22,34 +41,33 @@ async function askIjliya() {
       body: JSON.stringify({ question: query })
     });
 
-    statusEl.className = "status hidden";
-
     if (!response.ok) throw new Error("Service unavailable");
 
     const data = await response.json();
 
+    let reply;
     if (data.wiki_links && data.wiki_links.length > 0) {
       const link = data.wiki_links[0];
       const title = data.title || "Answer";
-      resultsEl.innerHTML = `
-        <div class="result-item">
-          <div class="result-title">${title}</div>
-          <a class="result-link" href="${link}" target="_blank" rel="noopener">${link}</a>
-          ${data.extract ? `<div class="result-extract">${data.extract.substring(0, 200)}...</div>` : ''}
-          <div class="small">Source: ${data.source}</div>
-        </div>
+      const extract = data.extract ? data.extract.substring(0, 200) + "..." : "";
+      reply = `
+        <strong>${title}</strong><br>
+        ${extract}<br>
+        <a href="${link}" target="_blank" rel="noopener" style="color:#1a73e8; text-decoration:underline;">Read more</a><br>
+        <small>Source: ${data.source}</small>
       `;
     } else {
-      resultsEl.innerHTML = `<div>No Wikipedia page found.</div>`;
+      reply = "I couldn’t find a Wikipedia page on that. Try rephrasing?";
     }
+
+    addMessage(reply, "ijiliya");
   } catch (err) {
-    statusEl.className = "status hidden";
-    errorEl.textContent = "⚠️ Ijliya is unreachable. Please try again later.";
-    errorEl.className = "error";
+    addMessage("⚠️ Ijiliya is unreachable. Please try again later.", "ijiliya");
   }
 }
 
-// Allow Enter key to submit
+// Button & Enter key
+document.getElementById("askBtn").addEventListener("click", askIjliya);
 document.getElementById("userQuery").addEventListener("keypress", (e) => {
   if (e.key === "Enter") askIjliya();
 });
