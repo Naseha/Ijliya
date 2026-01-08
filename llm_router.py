@@ -153,10 +153,7 @@ async def try_cerebras(question: str) -> Optional[str]:
 
 # --- WIKIMEDIA DISAMBIGUATION LAYER ---
 def get_wikipedia_disambiguation(topic: str, limit: int = 5) -> List[Dict[str, str]]:
-    """
-    Fetch up to `limit` Wikipedia candidates for `topic` using Wikimedia's opensearch API.
-    Returns list of {title, description, url}
-    """
+    print(f"Fetching disambiguation options for: {topic}")
     try:
         url = "https://en.wikipedia.org/w/api.php"
         params = {
@@ -170,12 +167,20 @@ def get_wikipedia_disambiguation(topic: str, limit: int = 5) -> List[Dict[str, s
         response = requests.get(url, params=params, timeout=8)
         response.raise_for_status()
         data = response.json()
+        print(f"API response data: {data}")
+        if len(data) < 4:
+            print("API response data is malformed or empty.")
+            return []
+
         titles = data[1]
         descriptions = data[2]
         urls = data[3]
 
         results = []
         for title, desc, url in zip(titles, descriptions, urls):
+            print(f"Candidate title: {title}")
+            print(f"Description: {desc}")
+            print(f"URL: {url}")
             results.append({
                 "title": title,
                 "description": (desc[:197] + "...") if len(desc) > 200 else desc or "No description available.",
@@ -183,9 +188,9 @@ def get_wikipedia_disambiguation(topic: str, limit: int = 5) -> List[Dict[str, s
             })
         return results
     except Exception as e:
-        print(f"⚠️ Wikimedia disambiguation failed: {str(e)[:60]}")
+        print(f"Error fetching disambiguation options: {str(e)}")
         return []
-
+        
 # --- MAIN ROUTER: Topic extraction + Disambiguation ---
 async def route_query_to_wiki(question: str) -> Dict[str, Any]:
     print(f"Received question: {question}")
@@ -256,7 +261,11 @@ async def extract_topic_fallback(question: str) -> str:
         ("Cerebras", try_cerebras),
     ]
     for name, func in providers:
+        print(f"Trying provider: {name}")
         result = await func(question)
+        print(f"Result from {name}: {result}")
         if result:
+            print(f"Using result from {name}: {result}")
             return result
+    print("No provider returned a result, defaulting to original question.")
     return question.strip()
