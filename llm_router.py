@@ -1,15 +1,14 @@
 # llm_router.py
 import os
 import asyncio
-from typing import Optional
+import requests
+from typing import Optional, List, Dict, Any
 
 # Import SDKs
 from groq import Groq
 import google.generativeai as genai
-#from openrouter_py import OpenRouter
 from openrouter import OpenRouter
 from huggingface_hub import InferenceClient
-import requests
 
 # Load API keys from environment (set in Render dashboard)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -32,7 +31,7 @@ PROMPT_TEMPLATE = (
 def clean_output(text: str) -> str:
     return text.strip().split('\n')[0].strip(' ."')
 
-# --- Groq ---
+# --- LLM PROVIDERS (unchanged) ---
 async def try_groq(question: str) -> Optional[str]:
     if not GROQ_API_KEY:
         return None
@@ -50,7 +49,6 @@ async def try_groq(question: str) -> Optional[str]:
         print(f"❌ Groq failed: {str(e)[:60]}")
         return None
 
-# --- Gemini (fixed import + usage) ---
 async def try_gemini(question: str) -> Optional[str]:
     keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     for key in keys:
@@ -70,7 +68,6 @@ async def try_gemini(question: str) -> Optional[str]:
             continue
     return None
 
-# --- OpenRouter ---
 async def try_openrouter(question: str) -> Optional[str]:
     if not OPENROUTER_API_KEY:
         return None
@@ -88,7 +85,6 @@ async def try_openrouter(question: str) -> Optional[str]:
         print(f"❌ OpenRouter failed: {str(e)[:60]}")
         return None
 
-# --- Hugging Face ---
 async def try_huggingface(question: str) -> Optional[str]:
     if not HUGGINGFACE_API_KEY:
         return None
@@ -107,7 +103,6 @@ async def try_huggingface(question: str) -> Optional[str]:
         print(f"❌ HuggingFace failed: {str(e)[:60]}")
         return None
 
-# --- SambaNova ---
 async def try_sambanova(question: str) -> Optional[str]:
     if not SAMBANOVA_API_KEY:
         return None
@@ -128,7 +123,6 @@ async def try_sambanova(question: str) -> Optional[str]:
         print(f"❌ SambaNova failed: {str(e)[:60]}")
         return None
 
-# --- Cerebras ---
 async def try_cerebras(question: str) -> Optional[str]:
     if not CEREBRAS_API_KEY:
         return None
@@ -149,7 +143,79 @@ async def try_cerebras(question: str) -> Optional[str]:
         print(f"❌ Cerebras failed: {str(e)[:60]}")
         return None
 
-# --- Main Router ---
+# --- WIKIMEDIA DISAMBIGUATION LAYER ---
+def get_wikipedia_disambiguation(topic: str, limit: int = 5) -> List[Dict[str, str]]:
+    """
+    Fetch up to `limit` Wikipedia candidates for `topic` using Wikimedia's opensearch API.
+    Returns list of {title, description, url}
+    """
+    try:
+        url = "https://en.wikipedia.org/w/api.php"
+        params = {
+            "action": "opensearch",
+            "search": topic,
+            "limit": limit,
+            "format": "json",
+            "namespace": 0,
+            "utf8": 1
+        }
+        response = requests.get(url, params=params, timeout=8)
+        response.raise_for_status()
+        data = response.json()
+        titles = data[1]
+        descriptions = data[2]
+        urls = data[3]
+
+        results = []
+        for title, desc, url in zip(titles, descriptions, urls):
+            results.append({
+                "title": title,
+                "description": (desc[:197] + "...") if len(desc) > 200 else desc or "No description available.",
+                "url": url
+            })
+        return results
+    except Exception as e:
+        print(f"⚠️ Wikimedia disambiguation failed: {str(e)[:60]}")
+        return []
+
+# --- MAIN ROUTER: Topic extraction + Disambiguation ---
+async def route_query_to_wiki(question: str) -> Dict[str, Any]:
+    """
+    Full pipeline: extract topic → check ambiguity → return disambiguation or single result.
+    This function is meant to be called from main.py.
+    """
+    # Step 1: Extract clean topic using fallback LLMs
+    topic = await extract_topic_fallback(question)
+    if not topic:
+        topic = question.strip()
+
+    # Step 2: Query Wikimedia for candidate pages
+    candidates = get_wikipedia_disambiguation(topic, limit=5)
+
+    # Step 3: Decide response format
+    if not candidates:
+        return {
+            "error": True,
+            "message": "No relevant Wikipedia pages found for your query."
+        }
+    elif len(candidates) == 1:
+        # Single match → return as if it were a normal fetch (main.py will handle full extract later if needed)
+        return {
+            "disambiguation": False,
+            "topic": topic,
+            "title": candidates[0]["title"],
+            "url": candidates[0]["url"]
+        }
+    else:
+        # Multiple matches → return list for user to choose
+        return {
+            "disambiguation": True,
+            "topic": topic,
+            "options": candidates,
+            "source": "Wikipedia (CC BY-SA, via Wikimedia API)"
+        }
+
+# --- Legacy: Fallback topic extractor (used internally) ---
 async def extract_topic_fallback(question: str) -> str:
     providers = [
         ("Groq", try_groq),
